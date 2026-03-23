@@ -9,10 +9,10 @@ from typing import Optional
 
 RISK_TABLE = [
     # (min_score, max_score, risk_tier, decision, max_credit_vnd, rate_range)
-    (750, 1000, "Low Risk",       "APPROVE",   500_000_000, "6-10%"),
-    (600,  749, "Medium Risk",    "ESCALATE",  200_000_000, "12-18%"),
-    (450,  599, "High Risk",      "DENY",      0,           "N/A"),
-    (0,    449, "Very High Risk", "DENY",      0,           "N/A"),
+    (680, 1000, "Rủi ro thấp",       "APPROVE",   200_000_000, "8-12%"),
+    (520,  679, "Rủi ro trung bình", "ESCALATE",  80_000_000,  "15-20%"),
+    (380,  519, "Rủi ro cao",        "DENY",      0,           "N/A"),
+    (0,    379, "Rủi ro rất cao",    "DENY",      0,           "N/A"),
 ]
 
 
@@ -36,9 +36,9 @@ def compute_composite(
     """
     Compute weighted composite score.
 
-    Underbanked (no bank data):
+    Underbanked micro-SME (no bank data) — common in Vietnam rural/informal sector:
         financial * 0.00 + alternative * 0.80 + behavioral * 0.20
-    Standard:
+    Standard SME with some banking history:
         financial * 0.50 + alternative * 0.30 + behavioral * 0.20
     """
     if is_underbanked:
@@ -71,7 +71,7 @@ def compute_composite(
     # Fallback
     return CompositeResult(
         composite_score=composite,
-        risk_tier="Very High Risk",
+        risk_tier="Rủi ro rất cao",
         decision="DENY",
         credit_limit=0.0,
         interest_rate_range="N/A",

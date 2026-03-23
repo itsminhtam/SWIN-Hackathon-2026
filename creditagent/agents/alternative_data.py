@@ -94,3 +94,27 @@ class AlternativeDataAgent:
                 "mobile": mobile_data is not None,
             },
         }
+
+if __name__ == "__main__":
+    # Sample usage to run and test the AlternativeDataAgent directly
+    agent = AlternativeDataAgent()
+    
+    sample_utility_data = {
+        "on_time_rate": 0.95,
+        "months_history": 24
+    }
+    
+    sample_mobile_data = {
+        "consistency_score": 0.8,
+        "monthly_volume": 20_000_000
+    }
+    
+    print("Running AlternativeDataAgent with sample data...")
+    result = agent.run(
+        utility_data=sample_utility_data,
+        mobile_data=sample_mobile_data,
+        has_bank_data=False
+    )
+    
+    import json
+    print(json.dumps(result, indent=2))

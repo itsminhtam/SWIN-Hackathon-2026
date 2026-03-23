@@ -50,8 +50,8 @@ class DataCollectionAgent:
 
         return {
             "borrower_id": borrower_id,
-            "name": persona["name"],
-            "scenario": persona["scenario"],
+            "name": persona.get("name", f"Unknown Name ({borrower_id})"),
+            "scenario": persona.get("scenario", "Custom scenario"),
             "bank_data": persona.get("bank_data"),
             "utility_data": persona.get("utility_data"),
             "mobile_data": persona.get("mobile_data"),

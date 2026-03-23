@@ -24,7 +24,7 @@ import plotly.express as px
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="CreditAgent — AI Credit Assessment",
+    page_title="CreditAgent — Vietnam SME Credit Assessment",
     page_icon="🏦",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -141,21 +141,33 @@ html, body, [class*="css"] {
 """, unsafe_allow_html=True)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=5)
+def fetch_personas():
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(f"{API_URL}/personas")
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception:
+        pass
+    
+    # Fallback if API is offline
+    return [
+        {"borrower_id": "borrower_001", "name": "Nguyen Van A", "scenario": "Strong Traditional"},
+        {"borrower_id": "borrower_002", "name": "Tran Thi B", "scenario": "Thin-file Alternative"},
+    ]
 
-PERSONA_LABELS = {
-    "borrower_001": "👨‍💼 Nguyen Van A — Strong Traditional",
-    "borrower_002": "⚡ Tran Thi B — Thin-file Alternative",
-    "borrower_003": "⚖️ Le Van C — Borderline Case",
-    "borrower_004": "⚠️ Pham Van D — High Risk",
-}
+PERSONA_LABELS = {}
+PERSONA_DESCRIPTIONS = {}
 
-PERSONA_DESCRIPTIONS = {
-    "borrower_001": "Business owner with strong bank history, low DTI, excellent payment record.",
-    "borrower_002": "Self-employed rural woman with NO bank account — evaluated via utility + mobile data.",
-    "borrower_003": "Employee with moderate DTI and some delinquency history.",
-    "borrower_004": "Young self-employed with high DTI, poor payment history, multiple derogatory records.",
-}
+for p in fetch_personas():
+    bid = p["borrower_id"]
+    name = p.get("name", "")
+    business_name = p.get("business_name", name)
+    scenario = p.get("scenario", "")
+    loan_purpose = p.get("loan_purpose", scenario)
+    PERSONA_LABELS[bid] = f"{business_name} — {loan_purpose}"
+    PERSONA_DESCRIPTIONS[bid] = scenario
 
 
 def get_decision_badge(decision: str) -> str:
@@ -164,9 +176,7 @@ def get_decision_badge(decision: str) -> str:
         "ESCALATE": "badge-escalate",
         "DENY": "badge-deny",
     }.get(decision, "badge-approve")
-    icons = {"APPROVE": "✅", "ESCALATE": "⚠️", "DENY": "❌"}
-    icon = icons.get(decision, "")
-    return f'<div style="text-align:center; margin: 16px 0"><span class="{css_class}">{icon} {decision}</span></div>'
+    return f'<div style="text-align:center; margin: 16px 0"><span class="{css_class}">{decision}</span></div>'
 
 
 def get_score_color(score: int) -> str:
@@ -179,17 +189,18 @@ def get_score_color(score: int) -> str:
     return "#7f1d1d"
 
 
-def run_assessment(borrower_id: str) -> dict:
+def run_assessment(borrower_id: str, agentic: bool = False) -> dict:
+    endpoint = "/assess/agentic" if agentic else "/assess"
     try:
-        with httpx.Client(timeout=120) as client:
-            resp = client.post(f"{API_URL}/assess", json={"borrower_id": borrower_id})
+        with httpx.Client(timeout=180) as client:
+            resp = client.post(f"{API_URL}{endpoint}", json={"borrower_id": borrower_id})
             resp.raise_for_status()
             return resp.json()
     except httpx.ConnectError:
-        st.error("❌ Cannot connect to CreditAgent API. Please start the server:\n\n`uvicorn api.main:app --reload`")
+        st.error("Cannot connect to CreditAgent API. Please start the server:\n\n`uvicorn api.main:app --reload`")
         return None
     except Exception as e:
-        st.error(f"❌ API error: {e}")
+        st.error(f"API error: {e}")
         return None
 
 
@@ -262,7 +273,7 @@ def shap_chart(shap_summary: dict, feature_names: list) -> go.Figure:
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🏦 CreditAgent")
+    st.markdown("## CREDITAGENT")
     st.markdown("*AI Multi-Agent Credit Assessment*")
     st.divider()
 
@@ -280,23 +291,28 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.divider()
-    run_btn = st.button("🚀 Run Credit Assessment", type="primary", use_container_width=True)
+    agentic_mode = st.toggle(
+        "Agentic Mode (ReAct Loop)",
+        value=True,
+        help="Uses LLM-driven ReAct loop: the AI autonomously reasons and selects tools. Falls back to deterministic pipeline if LLM unavailable.",
+    )
+    run_btn = st.button("RUN CREDIT ASSESSMENT", type="primary", use_container_width=True)
 
     st.divider()
     st.markdown("**Stack:**")
-    st.markdown("- 🤖 6 Specialist Agents\n- 🧠 XGBoost + SHAP\n- 💬 Claude AI Reports\n- ⚖️ Fairness Metrics")
+    st.markdown("- ReAct Agentic Loop\n- Tool Registry\n- Agent Memory\n- XGBoost + SHAP\n- Claude/Gemini AI\n- Fairness Metrics")
 
 
 # ── Main content ───────────────────────────────────────────────────────────────
-st.markdown("# 🏦 CreditAgent — AI Credit Assessment Dashboard")
-st.markdown("*Multi-agent system for SME credit evaluation including thin-file applicants*")
+st.markdown("# CREDITAGENT — VIETNAM SME CREDIT ASSESSMENT SYSTEM")
+st.markdown("*AI multi-agent system for micro-loans — empowering undocumented household businesses*")
 
 if "result" not in st.session_state:
     st.session_state.result = None
 
 if run_btn:
-    with st.spinner("🔄 Running agent pipeline…"):
-        result = run_assessment(selected_id)
+    with st.spinner("Running agent pipeline…"):
+        result = run_assessment(selected_id, agentic=agentic_mode)
         if result:
             st.session_state.result = result
             st.session_state.selected_id = selected_id
@@ -309,36 +325,48 @@ if result is None:
     with col1:
         st.markdown("""
         <div class="metric-card">
-            <div style="font-size:40px">🤖</div>
-            <h3 style="color:#1e293b">6 AI Agents</h3>
+            <h3 style="color:#1e293b; text-transform:uppercase;">6 AI AGENTS</h3>
             <p style="color:#64748b">Parallel specialist agents evaluate financial, alternative, and behavioral signals</p>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown("""
         <div class="metric-card">
-            <div style="font-size:40px">⚡</div>
-            <h3 style="color:#1e293b">Thin-file Ready</h3>
-            <p style="color:#64748b">Approve SMEs with no bank history using utility bills & mobile money data</p>
+            <h3 style="color:#1e293b; text-transform:uppercase;">SUPPORT THIN-FILE</h3>
+            <p style="color:#64748b">Approve micro-SMEs with no bank history using MoMo transactions & utility bills</p>
         </div>
         """, unsafe_allow_html=True)
     with col3:
         st.markdown("""
         <div class="metric-card">
-            <div style="font-size:40px">⚖️</div>
-            <h3 style="color:#1e293b">Fairness Built-in</h3>
-            <p style="color:#64748b">Disparate impact, counterfactual fairness checks on every decision</p>
+            <h3 style="color:#1e293b; text-transform:uppercase;">FAIR & TRANSPARENT</h3>
+            <p style="color:#64748b">Disparate impact and counterfactual fairness checks on every decision</p>
         </div>
         """, unsafe_allow_html=True)
 
-    st.info("👈 Select a borrower persona from the sidebar and click **Run Credit Assessment**")
+    st.info("Select a borrower persona from the sidebar and click Run Credit Assessment")
 else:
     # ── Thin-file banner ──────────────────────────────────────────────────────
     if result.get("is_underbanked") and result.get("decision") in ("APPROVE", "ESCALATE"):
         st.markdown("""
         <div class="thin-file-banner">
-            ⚡ THIN-FILE APPLICANT — Decision powered by <strong>Alternative Data</strong>
-            (Utility payments + Mobile money) — No bank account required!
+            THIN-FILE APPLICANT — Decision powered by <strong>Alternative Data</strong>
+            (EVN/VNPT Utility Payments + MoMo/ZaloPay/ViettelPay Transactions) — No bank account required!
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Agentic mode badge ────────────────────────────────────────────────────
+    agentic_mode_label = result.get("agentic_mode", "")
+    if agentic_mode_label == "react_llm":
+        st.markdown("""
+        <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:10px;padding:10px 20px;margin:8px 0;border-left:4px solid #38bdf8;color:#e0f2fe;font-size:14px">
+            🤖 <strong>ReAct Agentic Mode</strong> — LLM autonomously reasoned through tool selection and decision logic
+        </div>
+        """, unsafe_allow_html=True)
+    elif agentic_mode_label == "fallback_pipeline":
+        st.markdown("""
+        <div style="background:linear-gradient(135deg,#1c1917,#292524);border-radius:10px;padding:10px 20px;margin:8px 0;border-left:4px solid #a78bfa;color:#ede9fe;font-size:14px">
+            ⚙️ <strong>Agentic Fallback Pipeline</strong> — Tool registry + agent memory (LLM unavailable)
         </div>
         """, unsafe_allow_html=True)
 
@@ -362,7 +390,7 @@ else:
             limit_m = result["credit_limit"] / 1_000_000
             st.markdown(f"""
             <div style="text-align:center; color:#64748b; font-size:13px">
-                💰 Up to <b style="color:#1e293b">{limit_m:.0f}M VND</b> @ {result["interest_rate_range"]}
+                Up to <b style="color:#1e293b">{limit_m:.0f} million VND</b> @ {result["interest_rate_range"]}
             </div>
             """, unsafe_allow_html=True)
 
@@ -377,19 +405,20 @@ else:
         """, unsafe_allow_html=True)
 
     with col4:
-        st.metric("⏱️ Time", f"{result['processing_time_ms']}ms")
-        st.metric("📊 Completeness", f"{result['data_completeness']:.0%}")
-        bias_icon = "🔴" if result['bias_detected'] else "🟢"
-        st.metric("⚖️ Bias", f"{bias_icon}")
+        st.metric("TIME", f"{result['processing_time_ms']}ms")
+        st.metric("COMPLETENESS", f"{result['data_completeness']:.0%}")
+        bias_icon = "FAIL" if result['bias_detected'] else "PASS"
+        st.metric("BIAS", f"{bias_icon}")
 
     st.divider()
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Score Breakdown",
-        "🤖 Agent Pipeline",
-        "📄 Full Report",
-        "⚖️ Fairness Metrics",
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "SCORE BREAKDOWN",
+        "AGENT PIPELINE",
+        "FULL REPORT",
+        "FAIRNESS METRICS",
+        "REASONING TRACE",
     ])
 
     with tab1:
@@ -436,30 +465,29 @@ else:
 
         col_s, col_c = st.columns(2)
         with col_s:
-            st.markdown("### ✅ Key Strengths")
+            st.markdown("### KEY STRENGTHS")
             for s in result.get("key_strengths", []):
                 st.success(s)
         with col_c:
-            st.markdown("### ⚠️ Key Concerns")
+            st.markdown("### KEY CONCERNS")
             for c in result.get("key_concerns", []):
                 st.warning(c)
 
     with tab2:
-        st.markdown("### 🤖 Agent Execution Pipeline")
+        st.markdown("### AGENT EXECUTION PIPELINE")
         pipeline = result.get("agent_pipeline", [])
         for i, step in enumerate(pipeline):
             css = f"agent-{step.get('status', 'done')}"
-            icon = {"done": "✅", "override": "🔄", "running": "⏳"}.get(step.get("status"), "✅")
             st.markdown(f"""
             <div class="agent-step {css}">
-                <b style="color:#1e293b">{icon} Step {i+1}: {step.get("agent", "")}</b>
+                <b style="color:#1e293b; text-transform:uppercase;">STEP {i+1}: {step.get("agent", "")}</b>
                 <span style="color:#64748b; float:right; font-size:12px">{step.get("status", "").upper()}</span><br>
                 <span style="color:#64748b; font-size:13px">{step.get("output", "")}</span>
             </div>
             """, unsafe_allow_html=True)
 
         st.divider()
-        st.markdown("### 📡 Alternative Data Signals")
+        st.markdown("### ALTERNATIVE DATA SIGNALS")
         signals = result.get("alternative_signals", {})
         if signals:
             cols = st.columns(len(signals))
@@ -471,11 +499,11 @@ else:
                         st.metric(k.replace("_", " ").title(), f"{v:,}")
 
     with tab3:
-        st.markdown("### 📄 AI-Generated Credit Assessment Report")
+        st.markdown("### AI-GENERATED CREDIT ASSESSMENT REPORT")
         borrower_name = result.get("borrower_name", "")
         decision = result.get("decision", "")
         if result.get("is_underbanked"):
-            st.info("⚡ This report was generated for a **thin-file** applicant evaluated primarily on alternative data.")
+            st.info("This report was generated for a **thin-file** applicant evaluated primarily on alternative data.")
 
         report_text = result.get("report", "No report generated.")
         st.markdown(f"""
@@ -485,12 +513,12 @@ else:
         """, unsafe_allow_html=True)
 
     with tab4:
-        st.markdown("### ⚖️ Fairness & Bias Analysis")
+        st.markdown("### FAIRNESS & BIAS ANALYSIS")
 
         if result.get("bias_detected"):
-            st.error("🔴 **BIAS DETECTED** — Decision has been reviewed for potential fairness issues")
+            st.error("**BIAS DETECTED** — Decision has been reviewed for potential fairness issues")
         else:
-            st.success("🟢 **FAIRNESS PASS** — No significant bias detected across protected attributes")
+            st.success("**FAIRNESS PASS** — No significant bias detected across protected attributes")
 
         metrics = result.get("fairness_metrics", {})
 
@@ -500,6 +528,7 @@ else:
             "gender_disparate_impact": ("Gender Disparate Impact", "≥ 0.80", 0.80, True),
             "gender_statistical_parity": ("Gender Statistical Parity", "≤ 0.10", 0.10, False),
             "regional_disparate_impact": ("Regional Disparate Impact", "≥ 0.80", 0.80, True),
+            "employment_disparate_impact": ("Employment Disparate Impact", "≥ 0.80", 0.80, True),
         }
 
         for key, (label, threshold, thresh_val, higher_better) in metric_map.items():
@@ -519,7 +548,7 @@ else:
         # Counterfactual
         cf = metrics.get("counterfactual_fairness", {})
         if cf:
-            st.markdown("#### 🔄 Counterfactual Fairness (Gender Flip Test)")
+            st.markdown("#### COUNTERFACTUAL FAIRNESS (GENDER FLIP TEST)")
             col1, col2, col3 = st.columns(3)
             col1.metric("Original Score", cf.get("original_score", "N/A"))
             col2.metric("Counterfactual Score", cf.get("counterfactual_score", "N/A"))
@@ -527,10 +556,65 @@ else:
                        delta=None,
                        help="Threshold: ≤ 5%")
             if cf.get("is_fair"):
-                st.success(f"✅ Counterfactual fair — score changes by only {cf.get('score_change_pct', 0):.1f}%")
+                st.success(f"Counterfactual fair — score changes by only {cf.get('score_change_pct', 0):.1f}%")
             else:
-                st.warning(f"⚠️ Score changes by {cf.get('score_change_pct', 0):.1f}% when gender is flipped")
+                st.warning(f"Score changes by {cf.get('score_change_pct', 0):.1f}% when gender is flipped")
 
         bias_flags = metrics.get("bias_flags", [])
         if bias_flags:
-            st.error(f"🚩 Bias flags triggered: {', '.join(bias_flags)}")
+            st.error(f"Bias flags triggered: {', '.join(bias_flags)}")
+
+    with tab5:
+        st.markdown("### AGENT REASONING TRACE")
+        st.caption("Step-by-step record of every thought and tool call made during this assessment.")
+
+        reasoning_summary = result.get("reasoning_summary", "")
+        if reasoning_summary:
+            st.info(f"**Final Reasoning:** {reasoning_summary}")
+
+        trace = result.get("reasoning_trace", [])
+        if not trace:
+            st.warning("No reasoning trace available for this run.")
+        else:
+            for i, step in enumerate(trace):
+                step_type = step.get("type", "")
+                agent = step.get("agent", "Agent")
+                ts = step.get("ts", "")[:19].replace("T", " ")
+
+                if step_type == "thought":
+                    st.markdown(f"""
+                    <div style="background:#f0f9ff;border-left:3px solid #38bdf8;border-radius:6px;padding:10px 14px;margin:4px 0;font-size:13px">
+                        <span style="color:#0369a1;font-weight:600">💭 THOUGHT</span>
+                        <span style="color:#94a3b8;font-size:11px;float:right">{ts}</span><br>
+                        <span style="color:#1e293b">{step.get('content','')}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                elif step_type == "action":
+                    tool = step.get("tool", "")
+                    args = step.get("args", {})
+                    res = str(step.get("result", ""))[:200]
+                    st.markdown(f"""
+                    <div style="background:#f0fdf4;border-left:3px solid #22c55e;border-radius:6px;padding:10px 14px;margin:4px 0;font-size:13px">
+                        <span style="color:#15803d;font-weight:600">⚡ ACTION: {tool}</span>
+                        <span style="color:#94a3b8;font-size:11px;float:right">{ts}</span><br>
+                        <span style="color:#64748b;font-size:12px">args: {json.dumps(args, default=str)[:150]}</span><br>
+                        <span style="color:#1e293b">→ {res}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        st.divider()
+        st.markdown("### SESSION DECISION HISTORY")
+        try:
+            with httpx.Client(timeout=10) as client:
+                hist_resp = client.get(f"{API_URL}/history")
+                if hist_resp.status_code == 200:
+                    history = hist_resp.json().get("history", [])
+                    if history:
+                        import pandas as pd
+                        df_hist = pd.DataFrame(history)[["ts", "borrower_id", "decision", "composite_score"]]
+                        df_hist.columns = ["Timestamp", "Borrower", "Decision", "Score"]
+                        st.dataframe(df_hist, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No prior decisions in this session.")
+        except Exception:
+            st.info("Start the API server to see session history.")

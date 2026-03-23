@@ -20,12 +20,14 @@ from typing import Optional, List, Dict, Any
 import time
 
 from agents.orchestrator import OrchestratorAgent
+from agents.react_orchestrator import ReActOrchestrator
+from agents.agent_memory import get_session_history
 from mock_data.personas import PERSONAS
 
 app = FastAPI(
     title="CreditAgent API",
     description="AI Multi-Agent Credit Assessment System for SMEs",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -36,8 +38,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Single orchestrator instance (model loaded once)
+# Singleton orchestrator instances (models loaded once)
 _orchestrator = None
+_react_orchestrator = None
 
 
 def get_orchestrator() -> OrchestratorAgent:
@@ -45,6 +48,13 @@ def get_orchestrator() -> OrchestratorAgent:
     if _orchestrator is None:
         _orchestrator = OrchestratorAgent()
     return _orchestrator
+
+
+def get_react_orchestrator() -> ReActOrchestrator:
+    global _react_orchestrator
+    if _react_orchestrator is None:
+        _react_orchestrator = ReActOrchestrator()
+    return _react_orchestrator
 
 
 # ── Request / Response models ────────────────────────────────────────────────
@@ -77,6 +87,10 @@ class CreditAssessmentResult(BaseModel):
     alternative_signals: Dict[str, Any]
     agent_pipeline: List[Dict[str, Any]]
     confidence: float
+    # Agentic AI fields
+    reasoning_trace: Optional[List[Dict[str, Any]]] = None
+    agentic_mode: Optional[str] = None
+    reasoning_summary: Optional[str] = None
 
 
 class PersonaInfo(BaseModel):
@@ -100,9 +114,9 @@ def list_personas():
     return [
         PersonaInfo(
             borrower_id=bid,
-            name=p["name"],
-            scenario=p["scenario"],
-            expected_decision=p["expected_decision"],
+            name=p.get("name", f"Unknown Name ({bid})"),
+            scenario=p.get("scenario", "Custom Scenario"),
+            expected_decision=p.get("expected_decision", "UNKNOWN"),
             has_bank_data=p.get("bank_data") is not None,
         )
         for bid, p in PERSONAS.items()
@@ -112,7 +126,7 @@ def list_personas():
 @app.post("/assess", response_model=CreditAssessmentResult)
 def assess(request: AssessRequest):
     """
-    Run full credit assessment for a borrower.
+    Run full credit assessment for a borrower (classic pipeline).
 
     Body: {"borrower_id": "borrower_001"}
     """
@@ -134,3 +148,39 @@ def assess(request: AssessRequest):
         raise HTTPException(status_code=422, detail=result["error"])
 
     return result
+
+
+@app.post("/assess/agentic", response_model=CreditAssessmentResult)
+def assess_agentic(request: AssessRequest):
+    """
+    Run credit assessment using the ReAct agentic loop.
+    The LLM autonomously reasons about which tools to call and adapts
+    its strategy based on available data. Falls back to deterministic
+    pipeline if LLM is unavailable.
+
+    Body: {"borrower_id": "borrower_001"}
+    """
+    if request.borrower_id not in PERSONAS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Borrower '{request.borrower_id}' not found. "
+                   f"Available: {list(PERSONAS.keys())}",
+        )
+
+    orchestrator = get_react_orchestrator()
+
+    try:
+        result = orchestrator.run(request.borrower_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=result["error"])
+
+    return result
+
+
+@app.get("/history")
+def decision_history():
+    """Return session-level decision history across all assessments."""
+    return {"history": get_session_history()}

@@ -32,3 +32,7 @@ print()
 print("=== borrower_004 (high risk) ===")
 r4 = o.run("borrower_004")
 print(f"Decision: {r4['decision']} | Score: {r4['composite_score']} | {r4['risk_tier']}")
+
+print("=== borrower_005 (student) ===")
+r5 = o.run("borrower_005")
+print(f"Decision: {r5['decision']} | Score: {r5['composite_score']} | {r5['risk_tier']}")

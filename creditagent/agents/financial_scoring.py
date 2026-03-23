@@ -12,11 +12,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class FinancialScoringAgent:
     """Score borrower using ML model on financial features."""
 
-    def run(self, bank_data: Optional[dict]) -> dict:
+    def run(self, bank_data: Optional[dict], profile: dict = None) -> dict:
         """
         Parameters
         ----------
         bank_data : dict or None — raw bank data from DataCollectionAgent
+        profile : dict — demographic user profile
 
         Returns
         -------
@@ -26,7 +27,7 @@ class FinancialScoringAgent:
         from tools.ml_scorer import score, get_feature_names
 
         is_underbanked = bank_data is None
-        features = build_feature_vector(bank_data)
+        features = build_feature_vector(bank_data, profile=profile)
 
         try:
             financial_score, shap_array = score(features, is_underbanked=is_underbanked)

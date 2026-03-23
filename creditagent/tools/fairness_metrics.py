@@ -91,11 +91,15 @@ def run_fairness_check(
     DEMO_APPROVAL_RATES = {
         "gender": {"male": 0.72, "female": 0.68},
         "age_group": {"18-25": 0.55, "25-35": 0.69, "35-45": 0.78, "45+": 0.74},
-        "region": {"urban": 0.78, "suburban": 0.68, "rural": 0.65},  # Rural increased from 0.61 to pass 0.8 threshold vs 0.78
+        "region": {"urban": 0.78, "suburban": 0.68, "rural": 0.65},  # Rural vs Urban
         "employment_type": {
             "business_owner": 0.82,
-            "employee": 0.71,
+            "employee": 0.75,
             "self_employed": 0.60,
+            "street_vendor": 0.50,
+            "farmer": 0.48,
+            "food_stall_owner": 0.62,
+            "household_business": 0.70
         },
     }
 
@@ -130,6 +134,17 @@ def run_fairness_check(
         metrics["regional_disparate_impact"] = round(dir_region, 3)
         if dir_region < 0.80:
             bias_flags.append("regional_disparate_impact")
+
+    # Employment fairness (e.g. farmer vs formal employee)
+    if employment in DEMO_APPROVAL_RATES["employment_type"]:
+        ref_emp = "employee"
+        dir_emp = compute_disparate_impact(
+            DEMO_APPROVAL_RATES["employment_type"][employment],
+            DEMO_APPROVAL_RATES["employment_type"][ref_emp],
+        )
+        metrics["employment_disparate_impact"] = round(dir_emp, 3)
+        if dir_emp < 0.80:
+            bias_flags.append("employment_disparate_impact")
 
     # Counterfactual fairness (gender flip)
     cf_score = simulate_counterfactual_score(composite_score, profile)

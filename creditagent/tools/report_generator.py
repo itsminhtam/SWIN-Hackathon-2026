@@ -44,7 +44,7 @@ def generate_report(
     strengths_text = "\n".join(f"- {s}" for s in key_strengths)
     concerns_text = "\n".join(f"- {c}" for c in key_concerns)
 
-    system_prompt = "You are a senior credit analyst at a fintech company. Generate clear, professional credit assessment reports that are easy for loan officers to understand."
+    system_prompt = "You are a senior credit analyst at a fintech company. Generate clear, professional credit assessment reports that are easy for loan officers to understand.\nContext: This is a Vietnamese micro-SME credit assessment. The applicant may be a street vendor, household business owner, or informal sector worker. Alternative data sources include: MoMo, ZaloPay, ViettelPay transactions and EVN/VNPT utility payment history. Loan amounts are in VND (Vietnamese Dong). Generate the report in English but reference Vietnamese context appropriately. Replace generic terms like 'personal credit' with 'business credit' and 'borrower financial history' with 'business financial history'."
     user_prompt = f"""Generate a professional credit assessment report for:
 
 Borrower: {borrower_name}
@@ -73,12 +73,43 @@ Keep language professional but accessible. Max 300 words."""
 
     try:
         if api_key.startswith("AIza"):
-            # Use Google Gemini API
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
-            response = model.generate_content(user_prompt)
-            return response.text
+            # Use Google Gemini API (new SDK) with model fallback chain
+            try:
+                import time
+                import re
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=api_key)
+                model_chain = ["gemma-3-27b-it", "gemma-3-12b-it", "gemma-3-4b-it", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+                last_exc = None
+                for model_name in model_chain:
+                    try:
+                        resp = client.models.generate_content(
+                            model=model_name,
+                            contents=f"{system_prompt}\n\n{user_prompt}",
+                            config=types.GenerateContentConfig(
+                                max_output_tokens=600,
+                            ),
+                        )
+                        return resp.text
+                    except Exception as e:
+                        last_exc = e
+                        err_str = str(e)
+                        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                            # Daily quota — skip immediately; RPM — wait briefly
+                            if "PerDay" not in err_str and "daily" not in err_str.lower():
+                                m_delay = re.search(r"retry[_\s]delay[^0-9]*(\d+)", err_str, re.IGNORECASE)
+                                delay = min(float(m_delay.group(1)), 30.0) if m_delay else 5.0
+                                time.sleep(delay)
+                            continue
+                        raise
+                raise RuntimeError(f"All Gemini models exhausted: {last_exc}")
+            except ImportError:
+                import google.generativeai as genai
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=system_prompt)
+                response = model.generate_content(user_prompt)
+                return response.text
         elif api_key.startswith("sk-ant"):
             # Use Anthropic Claude API
             client = _get_client()

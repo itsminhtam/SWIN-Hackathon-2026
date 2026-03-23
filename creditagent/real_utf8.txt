@@ -1,0 +1,8 @@
+Pydantic Validation ERROR:
+2 validation errors for CreditAssessmentResult
+key_strengths
+  Input should be a valid list [type=list_type, input_value='Strong alternative data ...ablished credit history', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/list_type
+key_concerns
+  Input should be a valid list [type=list_type, input_value='Relatively low annual in...e, debt-to-income ratio', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/list_type
